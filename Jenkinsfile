@@ -1,5 +1,6 @@
 pipeline {
   agent any
+
   environment {
     IMAGE_NAME = 'ardyndocker/calc-app'
     REGISTRY  = 'https://index.docker.io/v1/'
@@ -11,44 +12,42 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Install Dependencies') {
+    stage('Run Unit Tests in Docker') {
       steps {
-        bat 'python --version'
-        bat 'python -m pip install --upgrade pip'
-        bat 'python -m pip install -r requirements.txt'
-        bat 'python -m pip install pytest'
+        // Gunakan Dockerfile.test untuk install deps dan menjalankan pytest
+        bat '''
+          docker build -t calc-test -f Dockerfile.test .
+          docker run --rm calc-test
+        '''
       }
     }
 
-    stage('Unit Test') {
-      steps {
-        bat 'pytest -q'
-      }
-    }
-
-    stage('Build Docker Image') {
+    stage('Build Production Image') {
       when { expression { currentBuild.currentResult == 'SUCCESS' } }
       steps {
-        bat 'docker version'
-        bat 'docker build -t %IMAGE_NAME%:%BUILD_NUMBER% .'
+        script {
+          docker.build("${IMAGE_NAME}:${env.BUILD_NUMBER}")
+        }
       }
     }
 
     stage('Push Docker Image') {
       when { expression { currentBuild.currentResult == 'SUCCESS' } }
       steps {
-        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS, usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-          bat 'docker login -u %USER% -p %PASS%'
-          bat 'docker push %IMAGE_NAME%:%BUILD_NUMBER%'
-          bat 'docker tag %IMAGE_NAME%:%BUILD_NUMBER% %IMAGE_NAME%:latest'
-          bat 'docker push %IMAGE_NAME%:latest'
-          bat 'docker logout'
+        script {
+          docker.withRegistry(env.REGISTRY, env.REGISTRY_CREDENTIALS) {
+            def tag = "${IMAGE_NAME}:${env.BUILD_NUMBER}"
+            docker.image(tag).push()
+            docker.image(tag).push('latest')
+          }
         }
       }
     }
   }
 
   post {
-    always { echo "Pipeline selesai: ${currentBuild.currentResult}" }
+    always { echo 'Pipeline selesai dijalankan' }
+    success { echo 'Build dan push berhasil!' }
+    failure { echo 'Pipeline gagal! Periksa log untuk detail error.' }
   }
 }
