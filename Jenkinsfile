@@ -5,38 +5,49 @@ pipeline {
     REGISTRY  = 'https://index.docker.io/v1/'
     REGISTRY_CREDENTIALS = 'dockerhub-kalkulator'
   }
+
   stages {
-    stage('Checkout'){ steps { checkout scm } }
+    stage('Checkout') {
+      steps { checkout scm }
+    }
 
-    stage('Unit Test'){
+    stage('Install Dependencies') {
       steps {
-        sh 'python -V'
-        sh 'pip install -r requirements.txt'
-        sh 'pip install pytest'
-        sh 'pytest -q'
+        bat 'python --version'
+        bat 'python -m pip install --upgrade pip'
+        bat 'python -m pip install -r requirements.txt'
+        bat 'python -m pip install pytest'
       }
     }
 
-    stage('Build Docker Image'){
-      when { expression { currentBuild.currentResult == 'SUCCESS' } }
+    stage('Unit Test') {
       steps {
-        script { docker.build("${IMAGE_NAME}:${env.BUILD_NUMBER}") }
+        bat 'pytest -q'
       }
     }
 
-    stage('Push Docker Image'){
+    stage('Build Docker Image') {
       when { expression { currentBuild.currentResult == 'SUCCESS' } }
       steps {
-        script {
-          docker.withRegistry(REGISTRY, REGISTRY_CREDENTIALS) {
-            def tag = "${IMAGE_NAME}:${env.BUILD_NUMBER}"
-            docker.image(tag).push()
-            docker.image(tag).push('latest')
-          }
+        bat 'docker version'
+        bat 'docker build -t %IMAGE_NAME%:%BUILD_NUMBER% .'
+      }
+    }
+
+    stage('Push Docker Image') {
+      when { expression { currentBuild.currentResult == 'SUCCESS' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS, usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          bat 'docker login -u %USER% -p %PASS%'
+          bat 'docker push %IMAGE_NAME%:%BUILD_NUMBER%'
+          bat 'docker tag %IMAGE_NAME%:%BUILD_NUMBER% %IMAGE_NAME%:latest'
+          bat 'docker push %IMAGE_NAME%:latest'
+          bat 'docker logout'
         }
       }
     }
   }
+
   post {
     always { echo "Pipeline selesai: ${currentBuild.currentResult}" }
   }
