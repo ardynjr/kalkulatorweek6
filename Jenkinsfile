@@ -14,10 +14,9 @@ pipeline {
 
     stage('Run Unit Tests in Docker') {
       steps {
-        // Gunakan Dockerfile.test untuk install deps dan menjalankan pytest
         bat '''
-          docker build -t calc-test -f Dockerfile.test .
-          docker run --rm calc-test
+          docker build --pull=missing -t calc-test -f Dockerfile.test .
+          docker run --rm -e PYTHONPATH=/app calc-test
         '''
       }
     }
